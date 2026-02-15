@@ -1,0 +1,60 @@
+menu "MCP Server Configuration"
+
+config MCP_WIFI_SSID
+    string "WiFi SSID"
+    default "myssid"
+    help
+        SSID (network name) for the MCP server to connect to.
+
+config MCP_WIFI_PASSWORD
+    string "WiFi Password"
+    default "mypassword"
+    help
+        WiFi password (WPA or WPA2) for the MCP server to use.
+
+config MCP_MAX_MESSAGE_SIZE
+    int "Maximum JSON-RPC message size"
+    default 4096
+    help
+        Maximum size of incoming JSON-RPC messages in bytes
+
+config MCP_MAX_TOOL_RESULT_SIZE
+    int "Maximum tool result size"
+    default 2048
+    help
+        Maximum size of tool result text in bytes
+
+config BLINK_GPIO
+    int "Blink GPIO number"
+    range 0 48
+    default 2 if IDF_TARGET_ESP32
+    default 8 if IDF_TARGET_ESP32C3
+    default 8 if IDF_TARGET_ESP32S2
+    default 8 if IDF_TARGET_ESP32S3
+    default 8
+    help
+        GPIO number (IOxx) to blink on and off or the RMT signal for the addressable LED.
+        Some GPIOs are used for other purposes (flash connections, etc.) and cannot be used to blink.
+
+menu "Logging"
+
+    config MCP_LOG_BUFFER_SIZE
+        int "Log ring buffer size (bytes)"
+        default 4096
+        range 1024 16384
+        help
+            Size of the log capture ring buffer in bytes
+
+endmenu
+
+menu "OTA Updates"
+
+    config MCP_OTA_URL
+        string "Default OTA firmware URL"
+        default "http://YOUR_HOST:8080/wss_server.bin"
+        help
+            Default HTTP URL for OTA firmware binary (used by local dev server)
+
+endmenu
+
+endmenu
