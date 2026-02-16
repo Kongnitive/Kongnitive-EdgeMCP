@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <esp_log.h>
+#include <esp_heap_caps.h>
 #include <esp_system.h>
 #include <esp_timer.h>
 #include <esp_wifi.h>
@@ -22,7 +23,7 @@ static const char *PROJECT_SYSTEM_PROMPT =
     "Goal: modify device behavior by editing Lua scripts in /spiffs, not by changing firmware unless required.\n"
     "Core loop: sys_get_logs -> lua_get_script -> edit -> lua_push_script -> lua_restart -> verify logs.\n"
     "For DI display switching, prefer lua_bind_dependency to update bindings.lua.\n"
-    "Default display interface is 'display' with providers like 'ssd1306' or 'mock_display'.\n"
+    "Default display interface is 'display' with providers like 'mock_display'.\n"
     "Useful tools: get_status, sys_get_logs, lua_list_scripts, lua_get_script, lua_push_script, lua_bind_dependency, lua_restart, lua_exec.\n"
     "Safety: keep script changes small, verify each step, and rollback by restoring previous script content if needed.";
 
@@ -50,7 +51,7 @@ static const mcp_tool_t tool_registry[] = {
     },
     {
         .name = "get_status",
-        .description = "Get system status information including memory, WiFi, and uptime",
+        .description = "Get system status including heap, Lua runtime memory, WiFi, and uptime",
         .input_schema_json = "{\"type\":\"object\",\"properties\":{}}",
         .handler = tool_get_status
     },
@@ -324,30 +325,82 @@ static esp_err_t tool_get_status(cJSON *args, char *result, size_t max_len)
     (void)args;
 
     // Get system information
+    uint32_t total_heap = heap_caps_get_total_size(MALLOC_CAP_8BIT);
     uint32_t free_heap = esp_get_free_heap_size();
     uint32_t min_free_heap = esp_get_minimum_free_heap_size();
+    uint32_t largest_free_block = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+
+    uint32_t internal_total_heap = heap_caps_get_total_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    uint32_t internal_free_heap = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    uint32_t internal_largest_free_block = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+
+#if CONFIG_SPIRAM
+    uint32_t psram_total = heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
+    uint32_t psram_free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+    uint32_t psram_largest_free_block = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM);
+#endif
+
     uint64_t uptime_sec = esp_timer_get_time() / 1000000ULL;
-    
+    uint32_t lua_heap_current = 0;
+    uint32_t lua_heap_peak = 0;
+    esp_err_t lua_mem_ret = lua_runtime_get_memory_usage(&lua_heap_current, &lua_heap_peak);
+
     // Get WiFi info
     wifi_ap_record_t ap_info;
     memset(&ap_info, 0, sizeof(ap_info));
     esp_err_t wifi_ret = esp_wifi_sta_get_ap_info(&ap_info);
     int rssi = (wifi_ret == ESP_OK) ? ap_info.rssi : 0;
-    
-    // Get LED state
-    int led_state = led_initialized ? gpio_get_level(LED_GPIO) : -1;
-    
+
     // Format result
     int written = snprintf(result, max_len,
         "ESP32 System Status:\n"
         "-------------------\n"
+        "Total Heap: %lu bytes (%.1f KB)\n"
         "Free Heap: %lu bytes (%.1f KB)\n"
         "Min Free Heap: %lu bytes (%.1f KB)\n"
+        "Largest Free Block: %lu bytes (%.1f KB)\n"
+        "Internal Heap Total: %lu bytes (%.1f KB)\n"
+        "Internal Heap Free: %lu bytes (%.1f KB)\n"
+        "Internal Largest Block: %lu bytes (%.1f KB)\n"
         "Uptime: %llu seconds (%.1f hours)\n",
+        total_heap, total_heap / 1024.0,
         free_heap, free_heap / 1024.0,
         min_free_heap, min_free_heap / 1024.0,
+        largest_free_block, largest_free_block / 1024.0,
+        internal_total_heap, internal_total_heap / 1024.0,
+        internal_free_heap, internal_free_heap / 1024.0,
+        internal_largest_free_block, internal_largest_free_block / 1024.0,
         uptime_sec, uptime_sec / 3600.0);
-    
+
+#if CONFIG_SPIRAM
+    if (psram_total > 0) {
+        written += snprintf(result + written, max_len - written,
+            "PSRAM Total: %lu bytes (%.1f KB)\n"
+            "PSRAM Free: %lu bytes (%.1f KB)\n"
+            "PSRAM Largest Block: %lu bytes (%.1f KB)\n",
+            psram_total, psram_total / 1024.0,
+            psram_free, psram_free / 1024.0,
+            psram_largest_free_block, psram_largest_free_block / 1024.0);
+    } else {
+        written += snprintf(result + written, max_len - written,
+            "PSRAM: Enabled in config, but not initialized\n");
+    }
+#else
+    written += snprintf(result + written, max_len - written,
+        "PSRAM: Disabled in firmware config (CONFIG_SPIRAM=n)\n");
+#endif
+
+    if (lua_mem_ret == ESP_OK) {
+        written += snprintf(result + written, max_len - written,
+            "Lua Heap Used: %lu bytes (%.1f KB)\n"
+            "Lua Heap Peak: %lu bytes (%.1f KB)\n",
+            lua_heap_current, lua_heap_current / 1024.0,
+            lua_heap_peak, lua_heap_peak / 1024.0);
+    } else {
+        written += snprintf(result + written, max_len - written,
+            "Lua Runtime: Not initialized\n");
+    }
+
     if (wifi_ret == ESP_OK) {
         written += snprintf(result + written, max_len - written,
             "WiFi SSID: %s\n"
@@ -356,15 +409,6 @@ static esp_err_t tool_get_status(cJSON *args, char *result, size_t max_len)
     } else {
         written += snprintf(result + written, max_len - written,
             "WiFi: Not connected\n");
-    }
-    
-    if (led_initialized) {
-        written += snprintf(result + written, max_len - written,
-            "LED State: %s (GPIO %d)\n",
-            led_state ? "ON" : "OFF", LED_GPIO);
-    } else {
-        written += snprintf(result + written, max_len - written,
-            "LED: Not initialized\n");
     }
 
     snprintf(result + written, max_len - written,

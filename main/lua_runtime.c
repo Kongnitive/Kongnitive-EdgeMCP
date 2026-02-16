@@ -7,6 +7,8 @@
 #include "lua_runtime.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
 #include <dirent.h>
 #include <sys/stat.h>
 #include <esp_log.h>
@@ -32,6 +34,45 @@ static const char *TAG = "lua_rt";
 static lua_State *L = NULL;
 static TaskHandle_t lua_task_handle = NULL;
 static volatile bool lua_task_running = false;
+static volatile uint32_t lua_mem_current = 0;
+static volatile uint32_t lua_mem_peak = 0;
+
+static void lua_mem_update(size_t old_size, size_t new_size)
+{
+    uint32_t current = lua_mem_current;
+    if (new_size >= old_size) {
+        current += (uint32_t)(new_size - old_size);
+    } else {
+        uint32_t delta = (uint32_t)(old_size - new_size);
+        current = (current > delta) ? (current - delta) : 0;
+    }
+
+    lua_mem_current = current;
+    if (current > lua_mem_peak) {
+        lua_mem_peak = current;
+    }
+}
+
+static void *lua_tracking_alloc(void *ud, void *ptr, size_t osize, size_t nsize)
+{
+    (void)ud;
+
+    if (nsize == 0) {
+        free(ptr);
+        if (ptr) {
+            lua_mem_update(osize, 0);
+        }
+        return NULL;
+    }
+
+    void *new_ptr = realloc(ptr, nsize);
+    if (!new_ptr) {
+        return NULL;
+    }
+
+    lua_mem_update(ptr ? osize : 0, nsize);
+    return new_ptr;
+}
 
 /* ── I2C bus state ─────────────────────────────────────────────── */
 
@@ -72,150 +113,10 @@ static i2c_master_dev_handle_t i2c_get_device(uint16_t addr)
 
 /* ── Default scripts (embedded) ─────────────────────────────────── */
 
-static const char *default_di_container_lua =
-    "local M = { providers = {}, bindings = {}, singletons = {} }\n"
-    "\n"
-    "function M.reset()\n"
-    "    M.providers = {}\n"
-    "    M.bindings = {}\n"
-    "    M.singletons = {}\n"
-    "end\n"
-    "\n"
-    "function M.provide(name, factory)\n"
-    "    assert(type(name) == 'string' and name ~= '', 'bad provider name')\n"
-    "    assert(type(factory) == 'function', 'factory must be function')\n"
-    "    M.providers[name] = factory\n"
-    "end\n"
-    "\n"
-    "function M.bind(iface, provider, opts)\n"
-    "    assert(type(iface) == 'string' and iface ~= '', 'bad interface')\n"
-    "    assert(type(provider) == 'string' and provider ~= '', 'bad provider')\n"
-    "    M.bindings[iface] = { provider = provider, opts = opts or {} }\n"
-    "    M.singletons[iface] = nil\n"
-    "end\n"
-    "\n"
-    "function M.resolve(iface)\n"
-    "    if M.singletons[iface] then\n"
-    "        return M.singletons[iface]\n"
-    "    end\n"
-    "    local b = assert(M.bindings[iface], 'no binding: ' .. iface)\n"
-    "    local f = assert(M.providers[b.provider], 'no provider: ' .. b.provider)\n"
-    "    local obj = f(b.opts, M)\n"
-    "    M.singletons[iface] = obj\n"
-    "    return obj\n"
-    "end\n"
-    "\n"
-    "return M\n";
-
-static const char *default_provider_ssd1306_lua =
-    "local P = {}\n"
-    "\n"
-    "local function cmd(addr, value)\n"
-    "    i2c.write(addr, 0x00, value)\n"
-    "end\n"
-    "\n"
-    "local function set_pos(addr, col, page)\n"
-    "    cmd(addr, 0xB0 | (page & 0x07))\n"
-    "    cmd(addr, col & 0x0F)\n"
-    "    cmd(addr, 0x10 | ((col >> 4) & 0x0F))\n"
-    "end\n"
-    "\n"
-    "local function send_page(addr, byte_value)\n"
-    "    local data = {0x40}\n"
-    "    for i = 1, 128 do\n"
-    "        data[i + 1] = byte_value\n"
-    "    end\n"
-    "    i2c.write(addr, data)\n"
-    "end\n"
-    "\n"
-    "function P.factory(opts, _container)\n"
-    "    opts = opts or {}\n"
-    "    local addr = opts.addr or 0x3C\n"
-    "    local sda = opts.sda or 5\n"
-    "    local scl = opts.scl or 6\n"
-    "    local freq = opts.freq or 400000\n"
-    "\n"
-    "    local o = {}\n"
-    "\n"
-    "    function o:init()\n"
-    "        i2c.setup(sda, scl, freq)\n"
-    "        local init_seq = {\n"
-    "            0xAE,0xA8,0x3F,0xD3,0x00,0x40,0xA1,0xC8,0xDA,0x12,\n"
-    "            0x81,0xCF,0xA4,0xA6,0xD5,0x80,0xD9,0xF1,0xDB,0x40,\n"
-    "            0x8D,0x14,0x20,0x00,0xAF\n"
-    "        }\n"
-    "        for _, v in ipairs(init_seq) do\n"
-    "            cmd(addr, v)\n"
-    "        end\n"
-    "        o:clear()\n"
-    "    end\n"
-    "\n"
-    "    function o:clear()\n"
-    "        for page = 0, 7 do\n"
-    "            set_pos(addr, 0, page)\n"
-    "            send_page(addr, 0x00)\n"
-    "        end\n"
-    "    end\n"
-    "\n"
-    "    function o:fill(on)\n"
-    "        local value = on and 0xFF or 0x00\n"
-    "        for page = 0, 7 do\n"
-    "            set_pos(addr, 0, page)\n"
-    "            send_page(addr, value)\n"
-    "        end\n"
-    "    end\n"
-    "\n"
-    "    function o:test_pattern(step)\n"
-    "        step = step or 0\n"
-    "        for page = 0, 7 do\n"
-    "            set_pos(addr, 0, page)\n"
-    "            local data = {0x40}\n"
-    "            for col = 0, 127 do\n"
-    "                local val = ((col + page + step) % 2 == 0) and 0xAA or 0x55\n"
-    "                data[col + 2] = val\n"
-    "            end\n"
-    "            i2c.write(addr, data)\n"
-    "        end\n"
-    "    end\n"
-    "\n"
-    "    return o\n"
-    "end\n"
-    "\n"
-    "return P\n";
-
-static const char *default_bindings_lua =
-    "return {\n"
-    "    display = {\n"
-    "        provider = 'ssd1306',\n"
-    "        opts = { addr = 0x3C, sda = 5, scl = 6, freq = 400000 }\n"
-    "    }\n"
-    "}\n";
-
-static const char *default_main_lua =
-    "log.info('main.lua (DI OLED case) started')\n"
-    "\n"
-    "local container = dofile('/spiffs/di_container.lua')\n"
-    "local provider = dofile('/spiffs/provider_ssd1306.lua')\n"
-    "local bindings = dofile('/spiffs/bindings.lua')\n"
-    "\n"
-    "container.reset()\n"
-    "container.provide('ssd1306', provider.factory)\n"
-    "\n"
-    "for iface, b in pairs(bindings) do\n"
-    "    container.bind(iface, b.provider, b.opts)\n"
-    "end\n"
-    "\n"
-    "local display = container.resolve('display')\n"
-    "display:init()\n"
-    "display:clear()\n"
-    "\n"
-    "local step = 0\n"
-    "while true do\n"
-    "    display:test_pattern(step)\n"
-    "    log.info(string.format('DI display tick step=%d', step))\n"
-    "    step = (step + 1) % 16\n"
-    "    time.sleep_ms(1000)\n"
-    "end\n";
+extern const uint8_t default_di_container_lua_start[] asm("_binary_default_di_container_lua_start");
+extern const uint8_t default_provider_ssd1306_lua_start[] asm("_binary_default_provider_ssd1306_lua_start");
+extern const uint8_t default_bindings_lua_start[] asm("_binary_default_bindings_lua_start");
+extern const uint8_t default_main_lua_start[] asm("_binary_default_main_lua_start");
 
 /* ── SPIFFS helpers ─────────────────────────────────────────────── */
 
@@ -271,22 +172,22 @@ static esp_err_t write_script_if_missing(const char *name, const char *content)
 
 static esp_err_t write_default_script(void)
 {
-    esp_err_t ret = write_script_if_missing("di_container.lua", default_di_container_lua);
+    esp_err_t ret = write_script_if_missing("di_container.lua", (const char *)default_di_container_lua_start);
     if (ret != ESP_OK) {
         return ret;
     }
 
-    ret = write_script_if_missing("provider_ssd1306.lua", default_provider_ssd1306_lua);
+    ret = write_script_if_missing("provider_ssd1306.lua", (const char *)default_provider_ssd1306_lua_start);
     if (ret != ESP_OK) {
         return ret;
     }
 
-    ret = write_script_if_missing("bindings.lua", default_bindings_lua);
+    ret = write_script_if_missing("bindings.lua", (const char *)default_bindings_lua_start);
     if (ret != ESP_OK) {
         return ret;
     }
 
-    return write_script_if_missing("main.lua", default_main_lua);
+    return write_script_if_missing("main.lua", (const char *)default_main_lua_start);
 }
 
 /* ── Lua C bindings: gpio ───────────────────────────────────────── */
@@ -578,7 +479,10 @@ static void register_libs(lua_State *L)
 
 static lua_State* create_vm(void)
 {
-    lua_State *state = luaL_newstate();
+    lua_mem_current = 0;
+    lua_mem_peak = 0;
+
+    lua_State *state = lua_newstate(lua_tracking_alloc, NULL);
     if (!state) {
         ESP_LOGE(TAG, "Failed to create Lua state");
         return NULL;
@@ -784,5 +688,19 @@ esp_err_t lua_runtime_list_scripts(char *buf, size_t max_len)
     if (offset == 0) {
         snprintf(buf, max_len, "(no scripts)");
     }
+    return ESP_OK;
+}
+
+esp_err_t lua_runtime_get_memory_usage(uint32_t *current_bytes, uint32_t *peak_bytes)
+{
+    if (!current_bytes || !peak_bytes) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!L) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    *current_bytes = lua_mem_current;
+    *peak_bytes = lua_mem_peak;
     return ESP_OK;
 }

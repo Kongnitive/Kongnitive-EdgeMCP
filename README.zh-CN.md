@@ -4,6 +4,10 @@
 
 ## Meet Kongnitive EdgeMCP
 
+**Kongnitive** — 鲲之认知。
+
+一个跑在 ESP32 上的 MCP 基座，把硬件的能力暴露给 AI。AI 通过工具读日志、推脚本、切驱动，直接迭代设备逻辑。基座托底，AI 赋智。
+
 `Kongnitive EdgeMCP` 是一个运行在 ESP32 上的 MCP Server，内置 Lua 5.4 运行时。
 
 - AI 可以通过 MCP 工具直接修改 SPIFFS 中的 Lua 脚本
@@ -12,8 +16,13 @@
 
 ### 通俗讲：AI 自迭代流程
 
-```text
-AI 读日志 -> 读当前脚本 -> 改脚本 -> push_script -> restart VM -> 验证
+```mermaid
+graph LR
+    A[get_system_prompt] --> B[lua_get_script]
+    B --> C[lua_push_script]
+    C --> D[lua_restart]
+    D --> E[sys_get_logs]
+    E -->|"验证 & 继续迭代"| C
 ```
 
 可以把固件理解成“稳定底座”，把 Lua 脚本理解成“可热更新业务层”。AI 通过 MCP 工具持续闭环迭代，不需要反复烧录。
@@ -22,9 +31,17 @@ AI 读日志 -> 读当前脚本 -> 改脚本 -> push_script -> restart VM -> 验
 
 ### 运行模型
 
-```text
-固件运行时 = MCP server + Lua VM + 硬件驱动
-业务逻辑   = SPIFFS 上的 Lua 脚本
+```mermaid
+graph TD
+    Agent["AI Agent (Claude, Codex, OpenClaw ...)"]
+    subgraph ESP32["Kongnitive EdgeMCP (ESP32)"]
+        MCP[MCP Server]
+        LuaVM[Lua VM]
+        SPIFFS[SPIFFS 脚本]
+        MCP --> LuaVM --> SPIFFS
+    end
+    Agent -- "MCP tools/call" --> MCP
+    MCP -- "MCP response" --> Agent
 ```
 
 ### 推荐 AI 工作流
@@ -95,13 +112,44 @@ idf.py -p /dev/ttyUSB0 flash monitor
 {"method":"tools/call","params":{"name":"lua_bind_dependency","arguments":{"provider":"ssd1306","interface":"display","opts":{"addr":60,"sda":5,"scl":6,"freq":400000},"restart":true}}}
 ```
 
+## FAQ（常见问题）
+
+### 这个项目解决什么问题？
+
+这个项目提供了一个稳定的 ESP32 MCP 基座，让 AI 和开发者可以在不反复重刷固件的情况下快速迭代设备行为。
+
+- 通过 MCP 工具暴露硬件能力。
+- 固件保持稳定，频繁变化的逻辑下沉到 Lua 脚本。
+- 支持远程脚本更新、重启和基于日志的验证闭环。
+
+### 为什么项目要用 Lua？是必须的吗？
+
+Lua 不是绝对必须，但它是当前默认架构选择，目的是提升迭代效率：
+
+- 固件负责稳定平台能力（MCP、传输层、驱动、OTA、安全）。
+- Lua 脚本承载可热更新的业务逻辑。
+- 很多行为改动可通过 MCP（`lua_push_script` + `lua_restart`）完成，不必重刷固件。
+
+当然也可以把逻辑直接写在 C 固件里，但迭代速度和远程调试便利性通常会下降。
+
+### Lua runtime 占多少内存？怎么确认？
+
+取决于当前运行脚本。默认样例通常是几十 KB（例如约 50KB）；当脚本分配较大的 table/buffer，或全局引用长期不释放时，会明显增大。
+
+可按下面方式确认：
+
+- 用 `get_status` 查看 `Lua Heap Used` 和 `Lua Heap Peak`。
+- 用 `sys_get_logs` 查看运行日志与内存相关信息。
+- 用 `lua_list_scripts` 和 `lua_get_script` 查看设备当前运行脚本内容。
+- 查看仓库内默认脚本样例：`main/default_scripts/`（如 `main/default_scripts/default_main.lua`）。
+
 ## For Developer
 
 ### 代码结构
 
 - `main/`：MCP server、协议、工具、运行时、OTA、Wi-Fi
 - `components/lua/`：Lua 5.4 组件
-- `doc/contribution.md`：贡献规范和 PR 检查项
+- `doc/CONTRIBUTION.md`：贡献规范和 PR 检查项
 - `MCP_AGENT_CONFIG.md`：AI Agent 项目级行为说明
 - `doc/TODO.md`：技术待办
 

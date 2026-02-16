@@ -5,4 +5,8 @@ idf_component_register(SRCS "wifi_manager.c" "mcp_server.c" "mcp_tools.c" "mcp_p
                                   esp_http_client app_update json esp_driver_gpio esp_driver_i2c
                                   spiffs lua
                     EMBED_TXTFILES "certs/servercert.pem"
-                                   "certs/prvtkey.pem")
+                                   "certs/prvtkey.pem"
+                                   "default_scripts/default_di_container.lua"
+                                   "default_scripts/default_provider_ssd1306.lua"
+                                   "default_scripts/default_bindings.lua"
+                                   "default_scripts/default_main.lua")
