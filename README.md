@@ -118,7 +118,7 @@ idf.py -p /dev/ttyUSB0 flash monitor
 
 - `main/` - MCP server, protocol, tools, runtime, OTA, Wi-Fi
 - `components/lua/` - Lua 5.4 component
-- `doc/contribution.md` - contribution rules and PR checklist
+- `doc/CONTRIBUTION.md` - contribution rules and PR checklist
 - `MCP_AGENT_CONFIG.md` - project-level agent behavior and MCP workflow
 - `doc/TODO.md` - open technical TODOs
 

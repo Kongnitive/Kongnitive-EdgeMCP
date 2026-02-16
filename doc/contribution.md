@@ -11,12 +11,68 @@ Thanks for contributing to `Kongnitive EdgeMCP`.
 
 1. Install ESP-IDF v5.0+ and export environment.
 2. Configure Wi-Fi and defaults in `sdkconfig.defaults`.
-3. Build and flash:
+3. Configure Wi-Fi, then build and flash:
 
 ```bash
 idf.py build
 idf.py -p /dev/ttyUSB0 flash monitor
 ```
+
+4. Read the ESP32-S3 monitor logs and capture the assigned STA IP, then use that IP for MCP client configuration (for example `http://<ip>/mcp` or `wss://<ip>/mcp`).
+
+## Branch Management
+
+We use a lightweight `main + dev` model:
+
+- `main`: release-ready code only. Protect this branch (no direct push).
+- `dev`: integration branch for daily development.
+- Feature/fix/docs work should branch from `dev` and merge back to `dev` via PR.
+- Feature flow:
+  - Create a branch from `dev`: `feat/*`, `fix/*`, `docs/*`, etc.
+  - Keep the branch focused on one issue.
+  - Open PR to `dev` with linked issue and test evidence.
+  - After merge, delete the feature branch.
+  - Periodically fast-forward/sync `dev` to `main` for stable releases.
+
+## Branch Naming
+
+Use lowercase names and hyphenated descriptions.
+
+- `feat/<scope>-<short-desc>`
+- `fix/<scope>-<short-desc>`
+- `docs/<scope>-<short-desc>`
+- `chore/<scope>-<short-desc>`
+- `refactor/<scope>-<short-desc>`
+- `test/<scope>-<short-desc>`
+
+Examples:
+
+- `feat/mcp-add-ota-status-fields`
+- `fix/lua-runtime-memory-report`
+- `docs/contribution-branch-policy`
+
+## Issue Creation
+
+Create an issue before coding for all non-trivial work.
+
+Include the following fields:
+
+- **Title**: clear and actionable
+- **Background**: why this is needed
+- **Current behavior**: what happens now
+- **Expected behavior**: what should happen
+- **Reproduction**: steps/logs (if bug)
+- **Proposed solution**: optional initial approach
+- **Impact**: modules/files/tools affected
+- **Acceptance criteria**: testable checklist
+
+Label guidance:
+
+- Type: `bug`, `feature`, `docs`, `chore`
+- Area: `runtime`, `mcp`, `lua`, `ota`, `wifi`, `docs`
+- Priority: `p0` - `p3`
+
+PRs should reference issues with `Closes #<id>` when applicable.
 
 ## Coding Rules
 
@@ -65,4 +121,3 @@ Example:
 ```text
 docs: add contribution guide for ESP32 MCP workflow
 ```
-

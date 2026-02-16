@@ -118,7 +118,7 @@ idf.py -p /dev/ttyUSB0 flash monitor
 
 - `main/`：MCP server、协议、工具、运行时、OTA、Wi-Fi
 - `components/lua/`：Lua 5.4 组件
-- `doc/contribution.md`：贡献规范和 PR 检查项
+- `doc/CONTRIBUTION.md`：贡献规范和 PR 检查项
 - `MCP_AGENT_CONFIG.md`：AI Agent 项目级行为说明
 - `doc/TODO.md`：技术待办
 
