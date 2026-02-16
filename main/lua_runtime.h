@@ -11,6 +11,7 @@
 #include <esp_err.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -62,6 +63,13 @@ esp_err_t lua_runtime_push_script(const char *name, const char *content, bool ap
  * @param max_len Size of buf
  */
 esp_err_t lua_runtime_list_scripts(char *buf, size_t max_len);
+
+/**
+ * Get Lua VM heap usage tracked by Lua allocator.
+ * @param current_bytes Current Lua heap usage in bytes
+ * @param peak_bytes    Peak Lua heap usage in bytes since VM creation
+ */
+esp_err_t lua_runtime_get_memory_usage(uint32_t *current_bytes, uint32_t *peak_bytes);
 
 #ifdef __cplusplus
 }

@@ -7,6 +7,7 @@
 #include "lua_runtime.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <dirent.h>
 #include <sys/stat.h>
 #include <esp_log.h>
@@ -32,6 +33,45 @@ static const char *TAG = "lua_rt";
 static lua_State *L = NULL;
 static TaskHandle_t lua_task_handle = NULL;
 static volatile bool lua_task_running = false;
+static volatile uint32_t lua_mem_current = 0;
+static volatile uint32_t lua_mem_peak = 0;
+
+static void lua_mem_update(size_t old_size, size_t new_size)
+{
+    uint32_t current = lua_mem_current;
+    if (new_size >= old_size) {
+        current += (uint32_t)(new_size - old_size);
+    } else {
+        uint32_t delta = (uint32_t)(old_size - new_size);
+        current = (current > delta) ? (current - delta) : 0;
+    }
+
+    lua_mem_current = current;
+    if (current > lua_mem_peak) {
+        lua_mem_peak = current;
+    }
+}
+
+static void *lua_tracking_alloc(void *ud, void *ptr, size_t osize, size_t nsize)
+{
+    (void)ud;
+
+    if (nsize == 0) {
+        free(ptr);
+        if (ptr) {
+            lua_mem_update(osize, 0);
+        }
+        return NULL;
+    }
+
+    void *new_ptr = realloc(ptr, nsize);
+    if (!new_ptr) {
+        return NULL;
+    }
+
+    lua_mem_update(ptr ? osize : 0, nsize);
+    return new_ptr;
+}
 
 /* ── I2C bus state ─────────────────────────────────────────────── */
 
@@ -578,7 +618,10 @@ static void register_libs(lua_State *L)
 
 static lua_State* create_vm(void)
 {
-    lua_State *state = luaL_newstate();
+    lua_mem_current = 0;
+    lua_mem_peak = 0;
+
+    lua_State *state = lua_newstate(lua_tracking_alloc, NULL);
     if (!state) {
         ESP_LOGE(TAG, "Failed to create Lua state");
         return NULL;
@@ -784,5 +827,19 @@ esp_err_t lua_runtime_list_scripts(char *buf, size_t max_len)
     if (offset == 0) {
         snprintf(buf, max_len, "(no scripts)");
     }
+    return ESP_OK;
+}
+
+esp_err_t lua_runtime_get_memory_usage(uint32_t *current_bytes, uint32_t *peak_bytes)
+{
+    if (!current_bytes || !peak_bytes) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!L) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    *current_bytes = lua_mem_current;
+    *peak_bytes = lua_mem_peak;
     return ESP_OK;
 }
