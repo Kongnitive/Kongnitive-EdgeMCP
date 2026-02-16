@@ -351,9 +351,6 @@ static esp_err_t tool_get_status(cJSON *args, char *result, size_t max_len)
     esp_err_t wifi_ret = esp_wifi_sta_get_ap_info(&ap_info);
     int rssi = (wifi_ret == ESP_OK) ? ap_info.rssi : 0;
 
-    // Get LED state
-    int led_state = led_initialized ? gpio_get_level(LED_GPIO) : -1;
-
     // Format result
     int written = snprintf(result, max_len,
         "ESP32 System Status:\n"
@@ -412,15 +409,6 @@ static esp_err_t tool_get_status(cJSON *args, char *result, size_t max_len)
     } else {
         written += snprintf(result + written, max_len - written,
             "WiFi: Not connected\n");
-    }
-
-    if (led_initialized) {
-        written += snprintf(result + written, max_len - written,
-            "LED State: %s (GPIO %d)\n",
-            led_state ? "ON" : "OFF", LED_GPIO);
-    } else {
-        written += snprintf(result + written, max_len - written,
-            "LED: Not initialized\n");
     }
 
     snprintf(result + written, max_len - written,
