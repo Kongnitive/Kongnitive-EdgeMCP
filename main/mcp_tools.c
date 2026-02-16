@@ -22,7 +22,7 @@ static const char *PROJECT_SYSTEM_PROMPT =
     "Goal: modify device behavior by editing Lua scripts in /spiffs, not by changing firmware unless required.\n"
     "Core loop: sys_get_logs -> lua_get_script -> edit -> lua_push_script -> lua_restart -> verify logs.\n"
     "For DI display switching, prefer lua_bind_dependency to update bindings.lua.\n"
-    "Default display interface is 'display' with providers like 'ssd1306' or 'mock_display'.\n"
+    "Default display interface is 'display' with providers like 'mock_display'.\n"
     "Useful tools: get_status, sys_get_logs, lua_list_scripts, lua_get_script, lua_push_script, lua_bind_dependency, lua_restart, lua_exec.\n"
     "Safety: keep script changes small, verify each step, and rollback by restoring previous script content if needed.";
 

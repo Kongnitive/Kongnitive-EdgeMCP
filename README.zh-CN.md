@@ -4,6 +4,10 @@
 
 ## Meet Kongnitive EdgeMCP
 
+**Kongnitive** — 鲲之认知。
+
+一个跑在 ESP32 上的 MCP 基座，把硬件的能力暴露给 AI。AI 通过工具读日志、推脚本、切驱动，直接迭代设备逻辑。基座托底，AI 赋智。
+
 `Kongnitive EdgeMCP` 是一个运行在 ESP32 上的 MCP Server，内置 Lua 5.4 运行时。
 
 - AI 可以通过 MCP 工具直接修改 SPIFFS 中的 Lua 脚本
@@ -12,8 +16,13 @@
 
 ### 通俗讲：AI 自迭代流程
 
-```text
-AI 读日志 -> 读当前脚本 -> 改脚本 -> push_script -> restart VM -> 验证
+```mermaid
+graph LR
+    A[get_system_prompt] --> B[lua_get_script]
+    B --> C[lua_push_script]
+    C --> D[lua_restart]
+    D --> E[sys_get_logs]
+    E -->|"验证 & 继续迭代"| C
 ```
 
 可以把固件理解成“稳定底座”，把 Lua 脚本理解成“可热更新业务层”。AI 通过 MCP 工具持续闭环迭代，不需要反复烧录。
@@ -22,9 +31,17 @@ AI 读日志 -> 读当前脚本 -> 改脚本 -> push_script -> restart VM -> 验
 
 ### 运行模型
 
-```text
-固件运行时 = MCP server + Lua VM + 硬件驱动
-业务逻辑   = SPIFFS 上的 Lua 脚本
+```mermaid
+graph TD
+    Agent["AI Agent (Claude, Codex, OpenClaw ...)"]
+    subgraph ESP32["Kongnitive EdgeMCP (ESP32)"]
+        MCP[MCP Server]
+        LuaVM[Lua VM]
+        SPIFFS[SPIFFS 脚本]
+        MCP --> LuaVM --> SPIFFS
+    end
+    Agent -- "MCP tools/call" --> MCP
+    MCP -- "MCP response" --> Agent
 ```
 
 ### 推荐 AI 工作流

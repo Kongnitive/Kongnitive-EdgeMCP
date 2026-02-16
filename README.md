@@ -4,6 +4,10 @@ Language: **English** | [Chinese (Simplified)](README.zh-CN.md)
 
 ## Meet Kongnitive EdgeMCP
 
+**Kongnitive** = Kong + Cognitive.
+
+An MCP base layer running on ESP32 that exposes hardware capabilities to AI. AI reads logs, pushes scripts, swaps drivers, and iterates device logic directly through MCP tools. The base layer holds steady, AI brings the intelligence.
+
 `Kongnitive EdgeMCP` is an ESP32 MCP server with an embedded Lua 5.4 runtime.
 
 - AI agents can update logic at runtime by writing Lua scripts to SPIFFS.
@@ -12,8 +16,13 @@ Language: **English** | [Chinese (Simplified)](README.zh-CN.md)
 
 ### In plain words: AI self-iteration
 
-```text
-Read logs -> Read current script -> Edit script -> Push script -> Restart VM -> Verify
+```mermaid
+graph LR
+    A[get_system_prompt] --> B[lua_get_script]
+    B --> C[lua_push_script]
+    C --> D[lua_restart]
+    D --> E[sys_get_logs]
+    E -->|"verify & repeat"| C
 ```
 
 Firmware can be understood as the stable foundation, while Lua scripts form the hot-updatable business layer. AI iterates in a continuous closed loop through MCP tools, without repeated reflashing.
@@ -22,9 +31,17 @@ Firmware can be understood as the stable foundation, while Lua scripts form the 
 
 ### Runtime model
 
-```text
-Firmware runtime = MCP server + Lua VM + hardware drivers
-Business logic   = Lua scripts on SPIFFS
+```mermaid
+graph TD
+    Agent["AI Agent (Claude, Codex, OpenClaw ...)"]
+    subgraph ESP32["Kongnitive EdgeMCP (ESP32)"]
+        MCP[MCP Server]
+        LuaVM[Lua VM]
+        SPIFFS[SPIFFS Scripts]
+        MCP --> LuaVM --> SPIFFS
+    end
+    Agent -- "MCP tools/call" --> MCP
+    MCP -- "MCP response" --> Agent
 ```
 
 ### Recommended AI loop
