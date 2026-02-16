@@ -112,6 +112,29 @@ idf.py -p /dev/ttyUSB0 flash monitor
 {"method":"tools/call","params":{"name":"lua_bind_dependency","arguments":{"provider":"ssd1306","interface":"display","opts":{"addr":60,"sda":5,"scl":6,"freq":400000},"restart":true}}}
 ```
 
+## FAQ
+
+### Why does this project use Lua? Is Lua mandatory?
+
+Lua is not strictly mandatory, but it is the default design choice for fast iteration:
+
+- Firmware keeps the stable platform responsibilities (MCP, transport, drivers, OTA, safety).
+- Lua scripts hold hot-updatable behavior logic.
+- Many behavior changes can be applied through MCP (`lua_push_script` + `lua_restart`) without reflashing firmware.
+
+You can implement logic directly in C firmware, but iteration speed and remote debugging convenience are typically lower.
+
+### How much memory does Lua runtime use? How can I verify it?
+
+It depends on the running scripts. In the default sample, it is usually in the tens of KB range (for example around 50 KB), but it can grow when scripts allocate large tables/buffers or keep global references alive.
+
+How to verify:
+
+- Use `get_status` to check `Lua Heap Used` and `Lua Heap Peak`.
+- Use `sys_get_logs` to inspect runtime behavior and memory-related logs.
+- Use `lua_list_scripts` and `lua_get_script` to inspect what is currently running on device.
+- Check default script samples in `main/default_scripts/` (for example `main/default_scripts/default_main.lua`).
+
 ## For Developer
 
 ### Code layout

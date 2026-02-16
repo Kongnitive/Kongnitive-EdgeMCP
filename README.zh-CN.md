@@ -112,6 +112,29 @@ idf.py -p /dev/ttyUSB0 flash monitor
 {"method":"tools/call","params":{"name":"lua_bind_dependency","arguments":{"provider":"ssd1306","interface":"display","opts":{"addr":60,"sda":5,"scl":6,"freq":400000},"restart":true}}}
 ```
 
+## FAQ（常见问题）
+
+### 为什么项目要用 Lua？是必须的吗？
+
+Lua 不是绝对必须，但它是当前默认架构选择，目的是提升迭代效率：
+
+- 固件负责稳定平台能力（MCP、传输层、驱动、OTA、安全）。
+- Lua 脚本承载可热更新的业务逻辑。
+- 很多行为改动可通过 MCP（`lua_push_script` + `lua_restart`）完成，不必重刷固件。
+
+当然也可以把逻辑直接写在 C 固件里，但迭代速度和远程调试便利性通常会下降。
+
+### Lua runtime 占多少内存？怎么确认？
+
+取决于当前运行脚本。默认样例通常是几十 KB（例如约 50KB）；当脚本分配较大的 table/buffer，或全局引用长期不释放时，会明显增大。
+
+可按下面方式确认：
+
+- 用 `get_status` 查看 `Lua Heap Used` 和 `Lua Heap Peak`。
+- 用 `sys_get_logs` 查看运行日志与内存相关信息。
+- 用 `lua_list_scripts` 和 `lua_get_script` 查看设备当前运行脚本内容。
+- 查看仓库内默认脚本样例：`main/default_scripts/`（如 `main/default_scripts/default_main.lua`）。
+
 ## For Developer
 
 ### 代码结构
