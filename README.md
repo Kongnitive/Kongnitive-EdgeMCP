@@ -114,6 +114,14 @@ idf.py -p /dev/ttyUSB0 flash monitor
 
 ## FAQ
 
+### What problem does this project solve?
+
+This project provides a stable ESP32 MCP platform that lets AI and developers iterate device behavior quickly without repeated reflashing.
+
+- Expose hardware capabilities through MCP tools.
+- Keep firmware stable while moving fast-changing logic to Lua scripts.
+- Support remote script update, restart, and log-based verification.
+
 ### Why does this project use Lua? Is Lua mandatory?
 
 Lua is not strictly mandatory, but it is the default design choice for fast iteration:
