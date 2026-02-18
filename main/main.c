@@ -211,6 +211,7 @@ static void connect_handler(void *arg, esp_event_base_t event_base,
     httpd_handle_t *server = (httpd_handle_t *)arg;
     if (*server == NULL) {
         *server = start_mcp_server();
+        start_http_server();
     }
 }
 
@@ -231,9 +232,12 @@ void app_main(void)
     ESP_ERROR_CHECK(ret);
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
-    /* Connect to WiFi */
+    /* Connect to WiFi (non-blocking: continue even if WiFi fails) */
     ESP_LOGI(TAG, "Connecting to WiFi...");
-    ESP_ERROR_CHECK(wifi_manager_connect());
+    esp_err_t wifi_result = wifi_manager_connect();
+    if (wifi_result != ESP_OK) {
+        ESP_LOGW(TAG, "WiFi connection failed, continuing without network");
+    }
 
     /* Register WiFi reconnection handlers */
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &connect_handler, &server));
@@ -242,11 +246,11 @@ void app_main(void)
     /* Initialize OTA subsystem (auto-confirm timer if needed) */
     mcp_ota_init();
 
-    /* Start the HTTPS/MCP server */
-    server = start_mcp_server();
-
-    /* Start plain HTTP server for easier MCP client access */
-    start_http_server();
+    /* Start servers only if WiFi is connected; otherwise connect_handler will start them later */
+    if (wifi_result == ESP_OK) {
+        server = start_mcp_server();
+        start_http_server();
+    }
 
     /* Initialize and start Lua scripting runtime */
     esp_err_t lua_ret = lua_runtime_init();

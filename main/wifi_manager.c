@@ -7,6 +7,7 @@
 #include <esp_wifi.h>
 #include <esp_event.h>
 #include <esp_log.h>
+#include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/event_groups.h>
 #include "sdkconfig.h"
@@ -16,9 +17,42 @@ static const char *TAG = "wifi_manager";
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
 #define MAX_RETRY          5
+#define RECONNECT_INTERVAL_US (30 * 1000000ULL)  /* 30 seconds */
 
 static EventGroupHandle_t s_wifi_event_group;
 static int s_retry_num = 0;
+static bool s_is_connected = false;
+static esp_timer_handle_t s_reconnect_timer = NULL;
+
+static void reconnect_timer_cb(void *arg)
+{
+    ESP_LOGI(TAG, "Background reconnect attempt...");
+    esp_wifi_connect();
+}
+
+static void start_reconnect_timer(void)
+{
+    if (s_reconnect_timer != NULL) {
+        return;  /* already running */
+    }
+    esp_timer_create_args_t timer_args = {
+        .callback = reconnect_timer_cb,
+        .name = "wifi_reconnect"
+    };
+    if (esp_timer_create(&timer_args, &s_reconnect_timer) == ESP_OK) {
+        esp_timer_start_periodic(s_reconnect_timer, RECONNECT_INTERVAL_US);
+        ESP_LOGW(TAG, "Background reconnection started (every 30s)");
+    }
+}
+
+static void stop_reconnect_timer(void)
+{
+    if (s_reconnect_timer != NULL) {
+        esp_timer_stop(s_reconnect_timer);
+        esp_timer_delete(s_reconnect_timer);
+        s_reconnect_timer = NULL;
+    }
+}
 
 static void wifi_event_handler(void* arg, esp_event_base_t event_base,
                                 int32_t event_id, void* event_data)
@@ -26,18 +60,21 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
         esp_wifi_connect();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        s_is_connected = false;
         if (s_retry_num < MAX_RETRY) {
             esp_wifi_connect();
             s_retry_num++;
             ESP_LOGI(TAG, "Retry connecting to WiFi (attempt %d/%d)", s_retry_num, MAX_RETRY);
         } else {
             xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
-            ESP_LOGE(TAG, "Failed to connect to WiFi after %d attempts", MAX_RETRY);
+            start_reconnect_timer();
         }
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
         ESP_LOGI(TAG, "Connected to WiFi, IP: " IPSTR, IP2STR(&event->ip_info.ip));
+        s_is_connected = true;
         s_retry_num = 0;
+        stop_reconnect_timer();
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
     }
 }
@@ -102,6 +139,8 @@ esp_err_t wifi_manager_connect(void)
 
 esp_err_t wifi_manager_disconnect(void)
 {
+    stop_reconnect_timer();
+
     esp_err_t ret = esp_wifi_stop();
     if (ret == ESP_OK) {
         ESP_LOGI(TAG, "WiFi disconnected");
@@ -112,5 +151,11 @@ esp_err_t wifi_manager_disconnect(void)
         s_wifi_event_group = NULL;
     }
 
+    s_is_connected = false;
     return ret;
+}
+
+bool wifi_manager_is_connected(void)
+{
+    return s_is_connected;
 }

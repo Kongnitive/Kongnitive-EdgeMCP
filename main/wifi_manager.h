@@ -8,6 +8,7 @@
 #define WIFI_MANAGER_H
 
 #include <esp_err.h>
+#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -30,6 +31,13 @@ esp_err_t wifi_manager_connect(void);
  * @return ESP_OK on success
  */
 esp_err_t wifi_manager_disconnect(void);
+
+/**
+ * Check if WiFi is currently connected
+ *
+ * @return true if connected, false otherwise
+ */
+bool wifi_manager_is_connected(void);
 
 #ifdef __cplusplus
 }
