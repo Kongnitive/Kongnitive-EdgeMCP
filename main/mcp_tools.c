@@ -22,6 +22,8 @@ static const char *PROJECT_SYSTEM_PROMPT =
     "You are controlling an ESP32 MCP server with a Lua runtime.\n"
     "Goal: modify device behavior by editing Lua scripts in /spiffs, not by changing firmware unless required.\n"
     "Core loop: sys_get_logs -> lua_get_script -> edit -> lua_push_script -> lua_restart -> verify logs.\n"
+    "Configuration best practice: keep addresses, pins, bus frequency, and provider options in /spiffs/bindings.lua.\n"
+    "Lua scripts should read config from bindings.lua with safe defaults instead of hardcoded constants.\n"
     "For DI display switching, prefer lua_bind_dependency to update bindings.lua.\n"
     "Default display interface is 'display' with providers like 'mock_display'.\n"
     "Useful tools: get_status, sys_get_logs, lua_list_scripts, lua_get_script, lua_push_script, lua_bind_dependency, lua_restart, lua_exec.\n"
