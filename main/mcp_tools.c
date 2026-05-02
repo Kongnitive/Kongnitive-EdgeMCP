@@ -179,7 +179,7 @@ esp_err_t mcp_tools_init(void)
     // Initialize LED GPIO
     gpio_config_t io_conf = {
         .pin_bit_mask = (1ULL << LED_GPIO),
-        .mode = GPIO_MODE_OUTPUT,
+        .mode = GPIO_MODE_INPUT_OUTPUT,
         .pull_up_en = GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_DISABLE
